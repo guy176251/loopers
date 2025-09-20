@@ -2,6 +2,7 @@ use crate::gui_channel::WAVEFORM_DOWNSAMPLE;
 use crate::music::SavedMetricStructure;
 use derive_more::{Add, Div, Mul, Sub};
 use serde::{Deserialize, Serialize};
+use std::fmt::format;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -342,6 +343,26 @@ impl Command {
                         .to_string(),
                 )?;
                 Box::new(move |_| Command::SetMetronomeLevel(arg))
+            }
+
+            "SetTempoBPM" => {
+                let v = args.first().ok_or(
+                    "SetTempoBPM requires 1 arg, either '$data' or a number between 1-127"
+                        .to_string(),
+                )?;
+
+                let arg = if *v == "$data" {
+                    None
+                } else {
+                    let f = f32::from_str(v)
+                        .map_err(|_| format!("Invalid value for SetTempoBPM: '{v}'"))?;
+                    Some(f)
+                };
+
+                Box::new(move |d| {
+                    debug!("Running SetTempoBPM: {d:?}");
+                    Command::SetTempoBPM(arg.unwrap_or((d.data * 2) as f32))
+                })
             }
 
             _ => {

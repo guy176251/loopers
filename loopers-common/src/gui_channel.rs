@@ -119,7 +119,7 @@ pub struct GuiReceiver {
 
 impl GuiSender {
     pub fn new() -> (GuiSender, GuiReceiver) {
-        let (tx, rx) = bounded(100);
+        let (tx, rx) = bounded(1000);
         let (log_tx, log_rx) = bounded(10);
 
         let sender = GuiSender {
@@ -149,7 +149,7 @@ impl GuiSender {
             match gui_sender.try_send(cmd) {
                 Ok(_) => {}
                 Err(TrySendError::Full(_)) => {
-                    warn!("GUI message queue is full");
+                    debug!("GUI message queue is full");
                 }
                 Err(TrySendError::Disconnected(_)) => {
                     // we're shutting down

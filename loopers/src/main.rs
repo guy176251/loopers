@@ -16,7 +16,7 @@ mod loopers_jack;
 mod looper_coreaudio;
 
 use crate::loopers_jack::jack_main;
-use clap::{arg, Command};
+use clap::{arg, Parser};
 use crossbeam_channel::bounded;
 use loopers_common::gui_channel::GuiSender;
 use loopers_gui::Gui;
@@ -27,81 +27,62 @@ use std::process::exit;
 const SINE_NORMAL: &[u8] = include_bytes!("../resources/sine_normal.wav");
 const SINE_EMPHASIS: &[u8] = include_bytes!("../resources/sine_emphasis.wav");
 
-fn setup_logger(debug_log: bool) -> Result<(), fern::InitError> {
-    let stdout_config = fern::Dispatch::new()
-        .chain(io::stdout())
-        .level(log::LevelFilter::Info);
-
-    let mut d = fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        .chain(stdout_config);
-
-    if debug_log {
-        let file_config = fern::Dispatch::new()
-            .chain(fern::log_file("output.log")?)
-            .level(log::LevelFilter::Debug);
-
-        d = d.chain(file_config);
-    };
-
-    d.apply()?;
-
-    Ok(())
-}
-
 #[cfg(target_os = "macos")]
 const DEFAULT_DRIVER: &str = "coreaudio";
 
 #[cfg(not(target_os = "macos"))]
 const DEFAULT_DRIVER: &str = "jack";
 
+#[derive(Parser)]
+#[command(
+    version = "0.1.2",
+    about = "Loopers is a graphical live looper, designed for ease of use and rock-solid stability"
+)]
+struct Cli {
+    /// Automatically restores the last saved session
+    #[arg(long, default_value_t = false)]
+    restore: bool,
+
+    /// Launches in headless mode (without the gui)
+    #[arg(long, default_value_t = false)]
+    no_gui: bool,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DRIVER.to_string(),
+        help = format!(
+            "Controls which audio driver to use (included drivers: {})",
+            if cfg!(feature = "coreaudio-rs") {
+                "coreaudio, jack"
+            } else {
+                "jack"
+            }
+        ),
+    )]
+    driver: String,
+
+    /// Enable debug logging
+    #[arg(long, default_value_t = false)]
+    debug: bool,
+
+    /// Path to output logs to
+    #[arg(long, default_value_t = String::new())]
+    log_path: String,
+}
+
 fn main() {
-    let drivers = if cfg!(feature = "coreaudio-rs") {
-        "coreaudio, jack"
-    } else {
-        "jack"
-    };
-
-    let matches = Command::new("loopers")
-        .version("0.1.2")
-        .author("Micah Wylde <micah@micahw.com>")
-        .about(
-            "Loopers is a graphical live looper, designed for ease of use and rock-solid stability",
-        )
-        .arg(arg!(--restore "Automatically restores the last saved session"))
-        .arg(arg!(--"no-gui" "Launches in headless mode (without the gui)"))
-        .arg(
-            arg!(--driver <VALUE>)
-                .default_value(DEFAULT_DRIVER)
-                .help(format!(
-                    "Controls which audio driver to use (included drivers: {})",
-                    drivers
-                )),
-        )
-        .arg(arg!(--debug))
-        .get_matches();
-
-    if let Err(e) = setup_logger(matches.get_flag("debug")) {
+    let cli = Cli::parse();
+    if let Err(e) = setup_logger(cli.debug, &cli.log_path) {
         eprintln!("Unable to set up logging: {:?}", e);
     }
 
-    let restore = matches.get_flag("restore");
-
-    if restore {
+    if cli.restore {
         info!("Restoring previous session");
     }
 
     let (gui_to_engine_sender, gui_to_engine_receiver) = bounded(100);
 
-    let (gui, gui_sender) = if !matches.get_flag("no-gui") {
+    let (gui, gui_sender) = if !cli.no_gui {
         let (sender, receiver) = GuiSender::new();
         (
             Some(Gui::new(receiver, gui_to_engine_sender, sender.clone())),
@@ -118,11 +99,7 @@ fn main() {
     let reader = hound::WavReader::new(SINE_EMPHASIS).unwrap();
     let beat_emphasis: Vec<f32> = reader.into_samples().map(|x| x.unwrap()).collect();
 
-    match matches
-        .get_one("driver")
-        .unwrap_or(&DEFAULT_DRIVER.to_string())
-        .as_str()
-    {
+    match cli.driver.as_str() {
         "jack" => {
             jack_main(
                 gui,
@@ -130,7 +107,7 @@ fn main() {
                 gui_to_engine_receiver,
                 beat_normal,
                 beat_emphasis,
-                restore,
+                cli.restore,
             );
         }
         "coreaudio" => {
@@ -142,7 +119,7 @@ fn main() {
                     gui_to_engine_receiver,
                     beat_normal,
                     beat_emphasis,
-                    restore,
+                    cli.restore,
                 )
                 .expect("failed to set up coreaudio");
             } else {
@@ -155,4 +132,38 @@ fn main() {
             exit(1);
         }
     }
+}
+
+fn setup_logger(debug: bool, path: &str) -> Result<(), fern::InitError> {
+    let level = if debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    let stdout_config = fern::Dispatch::new().chain(io::stdout()).level(level);
+
+    let mut d = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .chain(stdout_config);
+
+    if !path.is_empty() {
+        let file_config = fern::Dispatch::new()
+            .chain(fern::log_file(path)?)
+            .level(level);
+
+        d = d.chain(file_config);
+    };
+
+    d.apply()?;
+
+    Ok(())
 }

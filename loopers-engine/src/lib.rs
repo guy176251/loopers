@@ -699,7 +699,9 @@ impl Engine {
                 }
             }
             SetTempoBPM(bpm) => {
-                self.metric_structure.tempo = Tempo::from_bpm(*bpm);
+                let bpm = bpm.max(1.);
+                debug!("SetTempoBPM: Setting tempo to {bpm} bpm");
+                self.metric_structure.tempo = Tempo::from_bpm(bpm);
                 if let Some(met) = &mut self.metronome {
                     met.set_metric_structure(self.metric_structure);
                 }

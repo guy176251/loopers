@@ -173,10 +173,10 @@ impl MidiMapping {
                 u8::from_str(c)
                     .map_err(|_| "Channel must be * or a number".to_string())
                     .and_then(|c| {
-                        if (1..=16).contains(&c) {
+                        if (0..=16).contains(&c) {
                             Ok(c)
                         } else {
-                            Err("Channel must be between 1 and 16".to_string())
+                            Err("Channel must be between 0 and 16".to_string())
                         }
                     })?,
             ),
@@ -191,7 +191,7 @@ impl MidiMapping {
             .get(2)
             .ok_or("No data field".to_string())
             .map(DataValue::parse)?
-            .ok_or("Invalid data format (expected either *, a range like 15-20, or a single value like 127")?;
+            .ok_or("Invalid data format or value is greater than 127 (expected either *, a range like 15-20, or a single value like 127)")?;
 
         let args: Vec<&str> = record.iter().skip(4).collect();
 
