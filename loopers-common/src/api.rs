@@ -338,11 +338,30 @@ impl Command {
             }
 
             "SetMetronomeLevel" => {
-                let arg = args.first().and_then(|s| u8::from_str(s).ok()).ok_or(
-                    "SetMetronomeLevel expects a single numeric argument, the level between 0-100"
+                let v = args.first().ok_or(
+                    "SetMetronomeLevel requires 1 arg, either '$data' or a number between 0-100"
                         .to_string(),
                 )?;
-                Box::new(move |_| Command::SetMetronomeLevel(arg))
+
+                let arg = if *v == "$data" {
+                    None
+                } else {
+                    let n = u8::from_str(v)
+                        .map_err(|_| format!("Invalid value for SetMetronomeLevel: '{v}'"))?;
+                    if n > 100 {
+                        return Err(
+                            "Arg for SetMetronomeLevel must be a number between 0-100".to_string()
+                        );
+                    }
+                    Some(n)
+                };
+
+                Box::new(move |d| {
+                    let data = d.data as f32;
+                    let level = arg.unwrap_or((data / 127. * 100.) as u8);
+                    debug!("Settings metronome level to {level}");
+                    Command::SetMetronomeLevel(level)
+                })
             }
 
             "SetTempoBPM" => {
